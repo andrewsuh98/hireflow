@@ -5,21 +5,24 @@ import StatsCards from "../components/StatsCards";
 
 const StatusDistribution = lazy(() => import("../components/StatusDistribution"));
 const ActivityChart = lazy(() => import("../components/ActivityChart"));
-const RecentActivity = lazy(() => import("../components/RecentActivity"));
+import RecentActivity from "../components/RecentActivity";
 
 class ChartErrorBoundary extends Component<
-  { children: ReactNode },
-  { hasError: boolean }
+  { children: ReactNode; label?: string },
+  { hasError: boolean; errorMsg: string }
 > {
-  state = { hasError: false };
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  state = { hasError: false, errorMsg: "" };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMsg: error.message };
   }
   render() {
     if (this.state.hasError) {
       return (
         <div className="bg-slate-800 rounded-lg p-8 border border-slate-700 text-center">
-          <p className="text-slate-400">Chart failed to load.</p>
+          <p className="text-slate-400">
+            {this.props.label || "Component"} failed to load.
+          </p>
+          <p className="text-slate-500 text-xs mt-1">{this.state.errorMsg}</p>
         </div>
       );
     }
@@ -75,16 +78,24 @@ export default function DashboardPage() {
 
       {stats.data && <StatsCards stats={stats.data} />}
 
-      <ChartErrorBoundary>
-        <Suspense fallback={<div className="text-slate-400 text-sm">Loading charts...</div>}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {stats.data && <StatusDistribution statusCounts={stats.data.status_counts} />}
-            {activity.data && <ActivityChart data={activity.data} />}
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {stats.data && (
+          <ChartErrorBoundary label="Status Distribution">
+            <Suspense fallback={<div className="text-slate-400 text-sm">Loading chart...</div>}>
+              <StatusDistribution statusCounts={stats.data.status_counts} />
+            </Suspense>
+          </ChartErrorBoundary>
+        )}
+        {activity.data && (
+          <ChartErrorBoundary label="Activity Chart">
+            <Suspense fallback={<div className="text-slate-400 text-sm">Loading chart...</div>}>
+              <ActivityChart data={activity.data} />
+            </Suspense>
+          </ChartErrorBoundary>
+        )}
+      </div>
 
-          {recent.data && <RecentActivity entries={recent.data.entries} />}
-        </Suspense>
-      </ChartErrorBoundary>
+      {recent.data && <RecentActivity entries={recent.data.entries} />}
     </div>
   );
 }
