@@ -13,7 +13,7 @@ A local-first tool that connects to your Gmail, uses AI to parse job-related ema
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Node.js 18+
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - An [Anthropic API key](https://console.anthropic.com/)
@@ -43,24 +43,43 @@ Create a `.env` file in the project root:
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-### 3. Set up Google OAuth (one-time, for repo maintainer)
+### 3. Set up Google OAuth
 
-If `credentials.json` is not included in the repo, you need to create it:
+The `credentials.json` file identifies your app, not any specific user. Each person who uses the app authenticates with their own Google account through the OAuth consent screen.
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable the Gmail API
-4. Go to Credentials > Create Credentials > OAuth 2.0 Client ID
-5. Application type: Web application
-6. Add `http://localhost:8000/api/auth/callback` as an authorized redirect URI
-7. Download the JSON and save it as `credentials.json` in the project root
+2. Click the project dropdown (top-left) > **New Project**. Name it "HireFlow" and create it.
+3. Select your new project in the dropdown.
+
+**Enable the Gmail API:**
+
+4. Go to **APIs & Services** > **Library** in the left sidebar.
+5. Search for "Gmail API", click it, then click **Enable**.
+
+**Configure the OAuth consent screen:**
+
+6. Go to **APIs & Services** > **OAuth consent screen**.
+7. Click **Get Started** (or **Configure Consent Screen**).
+8. Choose **Internal** if you have a Google Workspace account, otherwise choose **External**.
+9. Fill in App name ("HireFlow"), support email, and developer contact email. Click **Save and Continue**.
+10. On the Scopes screen, click **Add or Remove Scopes**, find `https://www.googleapis.com/auth/gmail.readonly`, check it, then click **Update** and **Save and Continue**.
+11. If you chose External: on the Test users screen, click **Add Users** and add your Gmail address. Only test users can log in while the app is in Testing mode.
+
+**Create the OAuth credential:**
+
+12. Go to **APIs & Services** > **Credentials**.
+13. Click **+ Create Credentials** > **OAuth client ID**.
+14. Application type: **Web application**. Name it anything (e.g., "HireFlow Web Client").
+15. Under **Authorized redirect URIs**, click **Add URI** and enter: `http://localhost:8000/api/auth/callback`
+16. Click **Create**.
+17. Download the JSON from the dialog that appears and save it as `credentials.json` in the project root.
 
 ## Usage
 
 ### Start the backend
 
 ```bash
-uv run uvicorn backend.main:app --reload --port 8000
+uv run python -m uvicorn backend.main:app --reload --port 8000
 ```
 
 ### Start the frontend (in another terminal)
