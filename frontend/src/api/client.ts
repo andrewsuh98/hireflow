@@ -44,8 +44,7 @@ export const api = {
     request<import("../types").ApplicationDetail>(`/applications/${id}`),
 
   getDashboardStats: () => request<import("../types").DashboardStats>("/dashboard/stats"),
-  getDashboardFunnel: () => request<import("../types").FunnelData>("/dashboard/funnel"),
-  getDashboardTimeline: () =>
-    request<{ entries: import("../types").TimelineEntry[] }>("/dashboard/timeline"),
   getDashboardActivity: () => request<import("../types").ActivityData>("/dashboard/activity"),
+  getDashboardRecentActivity: () =>
+    request<import("../types").RecentActivityData>("/dashboard/recent-activity"),
 };

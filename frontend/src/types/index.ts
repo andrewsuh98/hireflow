@@ -29,23 +29,21 @@ export interface DashboardStats {
   status_counts: Record<string, number>;
 }
 
-export interface FunnelData {
-  stages: string[];
+export interface ActivityData {
+  months: string[];
   counts: number[];
 }
 
-export interface TimelineEntry {
-  id: number;
+export interface RecentActivityEntry {
+  event_type: string;
+  event_date: string;
+  summary: string | null;
   company_name: string;
   role_title: string | null;
-  current_status: string;
-  first_event_at: string;
-  last_event_at: string;
 }
 
-export interface ActivityData {
-  weeks: string[];
-  counts: number[];
+export interface RecentActivityData {
+  entries: RecentActivityEntry[];
 }
 
 export interface SyncStatus {
