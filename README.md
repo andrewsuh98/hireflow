@@ -8,7 +8,7 @@ A local-first tool that connects to your Gmail, uses AI to parse job-related ema
 - AI-powered email classification using Claude (detects applications, interviews, offers, rejections, etc.)
 - Dynamic interview funnels: each company can have different stages
 - Incremental sync: only processes new emails on subsequent runs
-- Local web dashboard with stats, funnel charts, timeline, and activity graphs
+- Local web dashboard with stats, status distribution, activity trends, and recent activity feed
 - All data stays local in a SQLite database
 
 ## Prerequisites
@@ -108,7 +108,7 @@ npm run dev
 ## Tech Stack
 
 - **Backend**: Python, FastAPI
-- **Frontend**: React, TypeScript, Tailwind CSS, Plotly
+- **Frontend**: React, TypeScript, Tailwind CSS, Recharts
 - **Database**: SQLite
 - **AI**: Claude API (Anthropic)
 - **Auth**: Google OAuth 2.0
