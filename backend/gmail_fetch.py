@@ -5,19 +5,81 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
 
+ATS_DOMAINS = [
+    "greenhouse.io",
+    "greenhouse-mail.io",
+    "lever.co",
+    "icims.com",
+    "myworkday.com",
+    "workday.com",
+    "taleo.net",
+    "bamboohr.com",
+    "jobvite.com",
+    "smartrecruiters.com",
+    "ashbyhq.com",
+    "dover.com",
+    "hired.com",
+    "wellfound.com",
+    "breezy.hr",
+    "recruitee.com",
+    "applytojob.com",
+]
+
+SUBJECT_PHRASES = [
+    "application received",
+    "application status",
+    "application confirmation",
+    "interview scheduled",
+    "interview confirmation",
+    "interview invitation",
+    "phone screen",
+    "coding challenge",
+    "take-home",
+    "online assessment",
+    "offer letter",
+    "background check",
+    "we regret",
+    "not moving forward",
+    "your application",
+    "thank you for applying",
+    "thank you for your application",
+    "received your application",
+    "next steps",
+    "candidate portal",
+]
+
+
 def get_gmail_service(creds: Credentials):
     return build("gmail", "v1", credentials=creds)
 
 
-def build_query(start_date: str) -> str:
+def build_queries(start_date: str) -> list[tuple[str, str]]:
     date_filter = f"after:{start_date.replace('-', '/')}"
-    keywords = (
-        "{application OR interview OR offer OR rejection OR "
-        "assessment OR coding challenge OR onsite OR phone screen OR "
-        "recruiter OR hiring OR position OR role OR candidacy OR "
-        "take-home OR panel OR final round OR background check}"
-    )
-    return f"{date_filter} {keywords}"
+
+    ats_domains = " OR ".join(ATS_DOMAINS)
+    query_a = f"{date_filter} from:({ats_domains})"
+
+    subject_clauses = " OR ".join(f'subject:"{phrase}"' for phrase in SUBJECT_PHRASES)
+    query_b = f"{date_filter} ({subject_clauses}) -category:promotions -category:social"
+
+    return [
+        (query_a, "ats_domain"),
+        (query_b, "subject_pattern"),
+    ]
+
+
+def build_query(start_date: str) -> str:
+    return build_queries(start_date)[0][0]
+
+
+def extract_sender_domain(from_header: str) -> str:
+    match = re.search(r"@([\w.-]+)", from_header)
+    return match.group(1).lower() if match else ""
+
+
+def is_ats_sender(from_header: str) -> bool:
+    domain = extract_sender_domain(from_header)
+    return any(domain == ats or domain.endswith("." + ats) for ats in ATS_DOMAINS)
 
 
 def fetch_message_ids(service, query: str) -> list[str]:

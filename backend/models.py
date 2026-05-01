@@ -73,7 +73,15 @@ class StagedEmailResponse(BaseModel):
     date: str
     snippet: str
     status: str
+    source_tier: str | None = None
+    triage_status: str | None = None
     result: StagedEmailResult | None = None
+
+
+class TriageResult(BaseModel):
+    gmail_message_id: str
+    likely_relevant: bool
+    confidence: float
 
 
 class ParsedEmail(BaseModel):

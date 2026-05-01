@@ -2,9 +2,10 @@ import json
 
 import anthropic
 
-from backend.models import ParsedEmail
+from backend.config import settings
+from backend.models import ParsedEmail, TriageResult
 
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 SYSTEM_PROMPT = """You are a job application email classifier. Given an email (subject, sender, body), determine:
 
@@ -81,6 +82,66 @@ def parse_email(email: dict) -> ParsedEmail:
     )
     text = next(b.text for b in response.content if b.type == "text")
     return ParsedEmail(**json.loads(text))
+
+
+TRIAGE_SYSTEM_PROMPT = """You are a job application email triage classifier. Given a batch of email metadata (subject, sender, snippet only), determine whether each email is likely related to a job application process.
+
+You are looking for: application confirmations, interview scheduling, recruiter outreach about specific roles, offer letters, rejections, assessment invitations, background checks, and similar job-search correspondence.
+
+You are NOT looking for: newsletters, marketing, social media notifications, financial offers, subscription confirmations, product updates, or general correspondence that happens to mention words like "role" or "position".
+
+For each email, return whether it is likely relevant and your confidence (0.0 to 1.0)."""
+
+TRIAGE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "likely_relevant": {"type": "boolean"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["index", "likely_relevant", "confidence"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["results"],
+    "additionalProperties": False,
+}
+
+
+def triage_emails_batch(emails: list[dict]) -> list[TriageResult]:
+    if not emails:
+        return []
+
+    emails_text = "\n\n".join(
+        f"[Email {i}]\nSubject: {e['subject']}\nFrom: {e['sender']}\nSnippet: {e['snippet']}"
+        for i, e in enumerate(emails)
+    )
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2048,
+        system=[{"type": "text", "text": TRIAGE_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": f"Triage these {len(emails)} emails:\n\n{emails_text}"}],
+        output_config={"format": {"type": "json_schema", "schema": TRIAGE_OUTPUT_SCHEMA}},
+    )
+    text = next(b.text for b in response.content if b.type == "text")
+    data = json.loads(text)
+
+    results = []
+    for item in data["results"]:
+        idx = item["index"]
+        if 0 <= idx < len(emails):
+            results.append(TriageResult(
+                gmail_message_id=emails[idx]["gmail_message_id"],
+                likely_relevant=item["likely_relevant"],
+                confidence=item["confidence"],
+            ))
+    return results
 
 
 def parse_email_batch(emails: list[dict]) -> list[ParsedEmail]:

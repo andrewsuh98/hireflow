@@ -8,12 +8,13 @@ from backend.database import get_db
 from backend.gmail_auth import get_credentials
 from backend.gmail_fetch import (
     get_gmail_service,
-    build_query,
+    build_queries,
     fetch_message_ids,
     fetch_message_metadata,
     fetch_message_content,
+    is_ats_sender,
 )
-from backend.ai_parser import parse_email_batch
+from backend.ai_parser import parse_email_batch, triage_emails_batch
 from backend.models import (
     SyncRequest,
     SyncStatus,
@@ -134,33 +135,90 @@ def run_fetch(start_date: str):
             return
 
         service = get_gmail_service(creds)
-        query = build_query(start_date)
-        all_ids = fetch_message_ids(service, query)
-        logger.info(f"Found {len(all_ids)} total emails")
+        queries = build_queries(start_date)
 
         processed = _get_processed_ids()
         staged = _get_staged_ids()
-        new_ids = [mid for mid in all_ids if mid not in processed and mid not in staged]
-        logger.info(f"New emails to fetch metadata for: {len(new_ids)}")
+        seen_ids: set[str] = set()
+        fetched_emails: list[dict] = []
 
-        _sync_state["progress"]["total"] = len(new_ids)
+        for query, tier in queries:
+            ids = fetch_message_ids(service, query)
+            logger.info(f"Query tier '{tier}' returned {len(ids)} emails")
+            for mid in ids:
+                if mid in processed or mid in staged or mid in seen_ids:
+                    continue
+                seen_ids.add(mid)
+                fetched_emails.append({"id": mid, "tier": tier})
 
+        logger.info(f"New emails to fetch metadata for: {len(fetched_emails)}")
+        _sync_state["progress"]["total"] = len(fetched_emails)
+
+        staged_for_triage: list[dict] = []
         db = get_db()
-        for mid in new_ids:
-            meta = fetch_message_metadata(service, mid)
+        for item in fetched_emails:
+            meta = fetch_message_metadata(service, item["id"])
+            tier = item["tier"]
+
+            if is_ats_sender(meta["from"]):
+                tier = "ats_domain"
+                triage_status = "auto_approved"
+            else:
+                triage_status = "pending"
+
             db.execute(
-                "INSERT OR IGNORE INTO staged_emails (gmail_message_id, subject, sender, date, snippet) VALUES (?, ?, ?, ?, ?)",
-                (meta["id"], meta["subject"], meta["from"], meta["date"], meta["snippet"]),
+                "INSERT OR IGNORE INTO staged_emails (gmail_message_id, subject, sender, date, snippet, source_tier, triage_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (meta["id"], meta["subject"], meta["from"], meta["date"], meta["snippet"], tier, triage_status),
             )
             _sync_state["progress"]["fetched"] += 1
 
+            if triage_status == "pending":
+                staged_for_triage.append({
+                    "gmail_message_id": meta["id"],
+                    "subject": meta["subject"],
+                    "sender": meta["from"],
+                    "snippet": meta["snippet"],
+                })
+
         db.commit()
         db.close()
+
+        if staged_for_triage:
+            _run_triage(staged_for_triage)
+
     except Exception as e:
         logger.exception(f"Fetch failed: {e}")
         raise
     finally:
         _sync_state["running"] = False
+
+
+def _run_triage(emails: list[dict]):
+    logger.info(f"Running Haiku triage on {len(emails)} emails")
+    db = get_db()
+    for batch in _chunk(emails, 25):
+        try:
+            results = triage_emails_batch(batch)
+            for result in results:
+                if result.likely_relevant and result.confidence >= 0.7:
+                    status = "auto_approved"
+                elif not result.likely_relevant and result.confidence >= 0.8:
+                    status = "auto_dismissed"
+                else:
+                    status = "needs_review"
+                db.execute(
+                    "UPDATE staged_emails SET triage_status = ? WHERE gmail_message_id = ?",
+                    (status, result.gmail_message_id),
+                )
+        except Exception as e:
+            logger.exception(f"Triage batch failed: {e}")
+            for email in batch:
+                db.execute(
+                    "UPDATE staged_emails SET triage_status = 'needs_review' WHERE gmail_message_id = ?",
+                    (email["gmail_message_id"],),
+                )
+    db.commit()
+    db.close()
 
 
 # Phase 2: Process selected emails with AI
@@ -239,7 +297,16 @@ def get_staged_emails() -> dict:
     db = get_db()
 
     staged_rows = db.execute(
-        "SELECT gmail_message_id, subject, sender, date, snippet FROM staged_emails ORDER BY fetched_at DESC"
+        """SELECT gmail_message_id, subject, sender, date, snippet, source_tier, triage_status
+        FROM staged_emails
+        ORDER BY
+            CASE triage_status
+                WHEN 'needs_review' THEN 0
+                WHEN 'pending' THEN 1
+                WHEN 'auto_approved' THEN 2
+                WHEN 'auto_dismissed' THEN 3
+            END,
+            fetched_at DESC"""
     ).fetchall()
 
     processed_rows = db.execute(
@@ -264,6 +331,8 @@ def get_staged_emails() -> dict:
             date=row["date"] or "",
             snippet=row["snippet"] or "",
             status="new",
+            source_tier=row["source_tier"],
+            triage_status=row["triage_status"],
         ))
 
     for row in processed_rows:
@@ -296,6 +365,22 @@ def sync_process(req: ProcessRequest, background_tasks: BackgroundTasks):
         return {"status": "no_emails_selected"}
     background_tasks.add_task(run_process, req.gmail_message_ids)
     return {"status": "started"}
+
+
+@router.post("/auto-process")
+def sync_auto_process(background_tasks: BackgroundTasks):
+    if _sync_state["running"]:
+        return {"status": "already_running"}
+    db = get_db()
+    rows = db.execute(
+        "SELECT gmail_message_id FROM staged_emails WHERE triage_status = 'auto_approved'"
+    ).fetchall()
+    db.close()
+    ids = [row["gmail_message_id"] for row in rows]
+    if not ids:
+        return {"status": "no_emails", "count": 0}
+    background_tasks.add_task(run_process, ids)
+    return {"status": "started", "count": len(ids)}
 
 
 @router.post("/dismiss")

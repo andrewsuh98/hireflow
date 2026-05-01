@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS staged_emails (
     sender           TEXT,
     date             TEXT,
     snippet          TEXT,
+    source_tier      TEXT,
+    triage_status    TEXT NOT NULL DEFAULT 'pending',
     fetched_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -87,6 +89,15 @@ def _migrate(conn: sqlite3.Connection):
             conn.execute(f"ALTER TABLE processed_emails ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass
+
+    try:
+        conn.execute("ALTER TABLE staged_emails ADD COLUMN source_tier TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE staged_emails ADD COLUMN triage_status TEXT NOT NULL DEFAULT 'pending'")
+    except sqlite3.OperationalError:
+        pass
 
 
 def init_db():
