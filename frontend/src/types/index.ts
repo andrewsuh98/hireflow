@@ -1,0 +1,63 @@
+export interface ApplicationSummary {
+  id: number;
+  company_name: string;
+  role_title: string | null;
+  current_status: string;
+  first_event_at: string;
+  last_event_at: string;
+}
+
+export interface ApplicationEvent {
+  id: number;
+  event_type: string;
+  event_label: string | null;
+  event_date: string;
+  summary: string | null;
+  raw_subject: string | null;
+  raw_from: string | null;
+  confidence: number;
+}
+
+export interface ApplicationDetail extends ApplicationSummary {
+  events: ApplicationEvent[];
+}
+
+export interface DashboardStats {
+  total_applications: number;
+  response_rate: number;
+  avg_days_to_response: number | null;
+  status_counts: Record<string, number>;
+}
+
+export interface FunnelData {
+  stages: string[];
+  counts: number[];
+}
+
+export interface TimelineEntry {
+  id: number;
+  company_name: string;
+  role_title: string | null;
+  current_status: string;
+  first_event_at: string;
+  last_event_at: string;
+}
+
+export interface ActivityData {
+  weeks: string[];
+  counts: number[];
+}
+
+export interface SyncStatus {
+  running: boolean;
+  progress: {
+    fetched: number;
+    parsed: number;
+    total: number;
+  };
+}
+
+export interface AuthStatus {
+  authenticated: boolean;
+  email: string | null;
+}
