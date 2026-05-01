@@ -11,31 +11,46 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 REDIRECT_URI = "http://localhost:8000/api/auth/callback"
 
 _state_store: dict[str, str] = {}
+_verifier_store: dict[str, str] = {}
 
 
 def create_auth_url() -> tuple[str, str]:
+    import hashlib, base64, secrets as _secrets
+
+    code_verifier = _secrets.token_urlsafe(96)
+
     flow = Flow.from_client_secrets_file(
         str(settings.google_credentials_path),
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI,
     )
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
     auth_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
     )
     _state_store[state] = state
+    _verifier_store[state] = code_verifier
     return auth_url, state
 
 
 def handle_callback(code: str, state: str) -> Credentials:
+    code_verifier = _verifier_store.pop(state, None)
+
     flow = Flow.from_client_secrets_file(
         str(settings.google_credentials_path),
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI,
         state=state,
     )
-    flow.fetch_token(code=code)
+    flow.fetch_token(code=code, code_verifier=code_verifier)
     creds = flow.credentials
     save_token(creds.to_json())
     _state_store.pop(state, None)
