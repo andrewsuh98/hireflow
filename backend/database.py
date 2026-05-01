@@ -5,7 +5,20 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS processed_emails (
     gmail_message_id TEXT PRIMARY KEY,
     processed_at     TEXT NOT NULL DEFAULT (datetime('now')),
-    was_relevant     INTEGER NOT NULL DEFAULT 0
+    was_relevant     INTEGER NOT NULL DEFAULT 0,
+    subject          TEXT,
+    sender           TEXT,
+    date             TEXT,
+    snippet          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS staged_emails (
+    gmail_message_id TEXT PRIMARY KEY,
+    subject          TEXT,
+    sender           TEXT,
+    date             TEXT,
+    snippet          TEXT,
+    fetched_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS sync_runs (
@@ -68,7 +81,17 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection):
+    for col in ("subject", "sender", "date", "snippet"):
+        try:
+            conn.execute(f"ALTER TABLE processed_emails ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA_SQL)
+    _migrate(conn)
+    conn.commit()
     conn.close()

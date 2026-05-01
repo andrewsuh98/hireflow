@@ -61,3 +61,17 @@ export interface AuthStatus {
   authenticated: boolean;
   email: string | null;
 }
+
+export interface StagedEmail {
+  gmail_message_id: string;
+  subject: string;
+  sender: string;
+  date: string;
+  snippet: string;
+  status: "new" | "processed_relevant" | "processed_irrelevant";
+  result?: {
+    event_type: string;
+    company_name: string;
+    role_title: string | null;
+  };
+}

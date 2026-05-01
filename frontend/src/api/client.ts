@@ -20,6 +20,15 @@ export const api = {
   getSyncStatus: () =>
     request<{ running: boolean; progress: { fetched: number; parsed: number; total: number } }>("/sync/status"),
 
+  fetchEmails: (start_date: string) =>
+    request("/sync/fetch", { method: "POST", body: JSON.stringify({ start_date }) }),
+  getStagedEmails: () =>
+    request<{ emails: import("../types").StagedEmail[] }>("/sync/staged"),
+  processSelected: (gmail_message_ids: string[]) =>
+    request("/sync/process", { method: "POST", body: JSON.stringify({ gmail_message_ids }) }),
+  dismissEmails: (gmail_message_ids: string[]) =>
+    request("/sync/dismiss", { method: "POST", body: JSON.stringify({ gmail_message_ids }) }),
+
   getApplications: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return request<{

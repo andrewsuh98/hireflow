@@ -11,13 +11,13 @@ def get_gmail_service(creds: Credentials):
 
 def build_query(start_date: str) -> str:
     date_filter = f"after:{start_date.replace('-', '/')}"
-    job_keywords = (
-        "subject:(application OR interview OR offer OR rejection OR "
+    keywords = (
+        "{application OR interview OR offer OR rejection OR "
         "assessment OR coding challenge OR onsite OR phone screen OR "
         "recruiter OR hiring OR position OR role OR candidacy OR "
-        "take-home OR panel OR final round OR background check)"
+        "take-home OR panel OR final round OR background check}"
     )
-    return f"{date_filter} {job_keywords} -category:promotions"
+    return f"{date_filter} {keywords}"
 
 
 def fetch_message_ids(service, query: str) -> list[str]:
@@ -29,6 +29,23 @@ def fetch_message_ids(service, query: str) -> list[str]:
         message_ids.extend(msg["id"] for msg in messages)
         request = service.users().messages().list_next(request, response)
     return message_ids
+
+
+def fetch_message_metadata(service, message_id: str) -> dict:
+    msg = service.users().messages().get(
+        userId="me",
+        id=message_id,
+        format="metadata",
+        metadataHeaders=["Subject", "From", "Date"],
+    ).execute()
+    headers = {h["name"].lower(): h["value"] for h in msg["payload"]["headers"]}
+    return {
+        "id": message_id,
+        "subject": headers.get("subject", ""),
+        "from": headers.get("from", ""),
+        "date": headers.get("date", ""),
+        "snippet": msg.get("snippet", ""),
+    }
 
 
 def fetch_message_content(service, message_id: str) -> dict:

@@ -52,6 +52,30 @@ class DashboardStats(BaseModel):
     status_counts: dict[str, int]
 
 
+class ProcessRequest(BaseModel):
+    gmail_message_ids: list[str]
+
+
+class DismissRequest(BaseModel):
+    gmail_message_ids: list[str]
+
+
+class StagedEmailResult(BaseModel):
+    event_type: str
+    company_name: str
+    role_title: str | None = None
+
+
+class StagedEmailResponse(BaseModel):
+    gmail_message_id: str
+    subject: str
+    sender: str
+    date: str
+    snippet: str
+    status: str
+    result: StagedEmailResult | None = None
+
+
 class ParsedEmail(BaseModel):
     is_job_related: bool
     company_name: str | None = None
