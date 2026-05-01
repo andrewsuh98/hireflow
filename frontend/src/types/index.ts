@@ -69,6 +69,8 @@ export interface StagedEmail {
   date: string;
   snippet: string;
   status: "new" | "processed_relevant" | "processed_irrelevant";
+  source_tier?: string | null;
+  triage_status?: string | null;
   result?: {
     event_type: string;
     company_name: string;

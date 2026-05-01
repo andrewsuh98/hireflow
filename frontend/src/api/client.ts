@@ -28,6 +28,8 @@ export const api = {
     request("/sync/process", { method: "POST", body: JSON.stringify({ gmail_message_ids }) }),
   dismissEmails: (gmail_message_ids: string[]) =>
     request("/sync/dismiss", { method: "POST", body: JSON.stringify({ gmail_message_ids }) }),
+  autoProcess: () =>
+    request<{ status: string; count?: number }>("/sync/auto-process", { method: "POST" }),
 
   getApplications: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";

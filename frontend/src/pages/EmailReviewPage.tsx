@@ -9,6 +9,7 @@ export default function EmailReviewPage() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ fetched: 0, parsed: 0, total: 0 });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDismissed, setShowDismissed] = useState(false);
   const intervalRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
 
@@ -20,6 +21,19 @@ export default function EmailReviewPage() {
   const emails = data?.emails ?? [];
   const newEmails = emails.filter((e) => e.status === "new");
   const processedEmails = emails.filter((e) => e.status !== "new");
+
+  const autoApproved = newEmails.filter(
+    (e) => e.triage_status === "auto_approved",
+  );
+  const needsReview = newEmails.filter(
+    (e) =>
+      e.triage_status === "needs_review" ||
+      e.triage_status === "pending" ||
+      !e.triage_status,
+  );
+  const autoDismissed = newEmails.filter(
+    (e) => e.triage_status === "auto_dismissed",
+  );
 
   useEffect(() => {
     return () => {
@@ -42,6 +56,14 @@ export default function EmailReviewPage() {
     [],
   );
 
+  const invalidateDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-funnel"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-timeline"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-activity"] });
+    queryClient.invalidateQueries({ queryKey: ["applications"] });
+  };
+
   const handleFetch = async () => {
     if (!startDate) return;
     setFetching(true);
@@ -62,11 +84,19 @@ export default function EmailReviewPage() {
       setProcessing(false);
       setSelectedIds(new Set());
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-funnel"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-timeline"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-activity"] });
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      invalidateDashboard();
+    });
+  };
+
+  const handleAutoProcess = async () => {
+    if (autoApproved.length === 0) return;
+    setProcessing(true);
+    setProgress({ fetched: 0, parsed: 0, total: 0 });
+    await api.autoProcess();
+    pollUntilDone(() => {
+      setProcessing(false);
+      refetch();
+      invalidateDashboard();
     });
   };
 
@@ -86,11 +116,20 @@ export default function EmailReviewPage() {
     });
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === newEmails.length) {
-      setSelectedIds(new Set());
+  const toggleSelectAllReview = () => {
+    const reviewIds = needsReview.map((e) => e.gmail_message_id);
+    if (reviewIds.every((id) => selectedIds.has(id))) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        reviewIds.forEach((id) => next.delete(id));
+        return next;
+      });
     } else {
-      setSelectedIds(new Set(newEmails.map((e) => e.gmail_message_id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        reviewIds.forEach((id) => next.add(id));
+        return next;
+      });
     }
   };
 
@@ -138,39 +177,6 @@ export default function EmailReviewPage() {
         )}
       </div>
 
-      {newEmails.length > 0 && (
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 flex items-center gap-4">
-          <button
-            onClick={toggleSelectAll}
-            className="text-sm text-indigo-400 hover:text-indigo-300"
-          >
-            {selectedIds.size === newEmails.length
-              ? "Deselect All"
-              : "Select All New"}
-          </button>
-          <span className="text-sm text-slate-400">
-            {selectedIds.size} selected
-          </span>
-          <div className="flex-1" />
-          <button
-            onClick={handleProcess}
-            disabled={busy || selectedIds.size === 0}
-            className="px-4 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {processing
-              ? "Processing..."
-              : `Process Selected (${selectedIds.size})`}
-          </button>
-          <button
-            onClick={handleDismiss}
-            disabled={busy || selectedIds.size === 0}
-            className="px-4 py-2 bg-slate-600 text-white rounded text-sm hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Dismiss Selected ({selectedIds.size})
-          </button>
-        </div>
-      )}
-
       {processing && progress.total > 0 && (
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <div className="w-full bg-slate-700 rounded-full h-2">
@@ -187,17 +193,81 @@ export default function EmailReviewPage() {
         </div>
       )}
 
-      {newEmails.length > 0 && (
+      {autoApproved.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-white">
+              High Confidence ({autoApproved.length})
+            </h2>
+            <button
+              onClick={handleAutoProcess}
+              disabled={busy}
+              className="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing ? "Processing..." : `Process All (${autoApproved.length})`}
+            </button>
+          </div>
+          <EmailTable emails={autoApproved} showTier />
+        </div>
+      )}
+
+      {needsReview.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-white mb-3">
-            New Emails ({newEmails.length})
+            Needs Review ({needsReview.length})
           </h2>
+          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 flex items-center gap-4 mb-3">
+            <button
+              onClick={toggleSelectAllReview}
+              className="text-sm text-indigo-400 hover:text-indigo-300"
+            >
+              {needsReview.every((e) => selectedIds.has(e.gmail_message_id))
+                ? "Deselect All"
+                : "Select All"}
+            </button>
+            <span className="text-sm text-slate-400">
+              {selectedIds.size} selected
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={handleProcess}
+              disabled={busy || selectedIds.size === 0}
+              className="px-4 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing
+                ? "Processing..."
+                : `Process Selected (${selectedIds.size})`}
+            </button>
+            <button
+              onClick={handleDismiss}
+              disabled={busy || selectedIds.size === 0}
+              className="px-4 py-2 bg-slate-600 text-white rounded text-sm hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Dismiss Selected ({selectedIds.size})
+            </button>
+          </div>
           <EmailTable
-            emails={newEmails}
+            emails={needsReview}
             selectedIds={selectedIds}
             onToggle={toggleSelect}
             selectable
+            showTier
           />
+        </div>
+      )}
+
+      {autoDismissed.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowDismissed(!showDismissed)}
+            className="flex items-center gap-2 text-lg font-semibold text-slate-400 hover:text-slate-300 mb-3"
+          >
+            <span className="text-sm">{showDismissed ? "v" : ">"}</span>
+            Auto-Dismissed ({autoDismissed.length})
+          </button>
+          {showDismissed && (
+            <EmailTable emails={autoDismissed} showTier />
+          )}
         </div>
       )}
 
@@ -220,6 +290,24 @@ export default function EmailReviewPage() {
       )}
     </div>
   );
+}
+
+function TierBadge({ tier }: { tier: string | null | undefined }) {
+  if (tier === "ats_domain") {
+    return (
+      <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-600/30 text-emerald-300 ml-2">
+        ATS
+      </span>
+    );
+  }
+  if (tier === "subject_pattern") {
+    return (
+      <span className="px-1.5 py-0.5 rounded text-xs bg-sky-600/30 text-sky-300 ml-2">
+        Subject
+      </span>
+    );
+  }
+  return null;
 }
 
 function StatusBadge({ status }: { status: StagedEmail["status"] }) {
@@ -249,11 +337,13 @@ function EmailTable({
   selectedIds,
   onToggle,
   selectable,
+  showTier,
 }: {
   emails: StagedEmail[];
   selectedIds?: Set<string>;
   onToggle?: (id: string) => void;
   selectable?: boolean;
+  showTier?: boolean;
 }) {
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
@@ -286,6 +376,7 @@ function EmailTable({
               <td className="p-3">
                 <div className="text-white truncate max-w-md">
                   {email.subject || "(no subject)"}
+                  {showTier && <TierBadge tier={email.source_tier} />}
                 </div>
                 <div className="text-xs text-slate-500 truncate max-w-md mt-0.5">
                   {email.snippet}
